@@ -8,10 +8,16 @@ import (
 	"syscall"
 
 	"github.com/IBM/sarama"
+	"github.com/barbodimani81/trading-bot.git/internal/platform/redis"
 	"github.com/barbodimani81/trading-bot.git/internal/workerpool"
 )
 
 func main() {
+	rdb, err := redis.NewRedisClient("localhost:6379")
+    if err != nil {
+        log.Fatalf("Processor Redis Init Failed: %v", err)
+    }
+	
 	config := sarama.NewConfig()
 	consumer, err := sarama.NewConsumer([]string{"localhost:9092"}, config)
 	if err != nil {
@@ -25,6 +31,7 @@ func main() {
 	}
 
 	wp := workerpool.NewWorkerPool(5)
+    wp.Redis = rdb
 	ctx, cancel := context.WithCancel(context.Background())
 	wp.Start(ctx)
 

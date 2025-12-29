@@ -10,6 +10,7 @@ import (
 
 	"github.com/barbodimani81/trading-bot.git/internal/platform/kafka"
 	"github.com/barbodimani81/trading-bot.git/internal/platform/redis"
+	"github.com/barbodimani81/trading-bot.git/internal/workerpool"
 
 	"github.com/adshao/go-binance/v2"
 )
@@ -19,6 +20,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Redis Init Failed: %v", err)
 	}
+	wp := workerpool.NewWorkerPool(5)
+	wp.Redis = rdb
+	wp.Start(context.Background())
 
 	producer, err := kafka.NewProducer([]string{"localhost:9092"})
 	if err != nil {
@@ -44,10 +48,10 @@ func main() {
 		log.Printf("Binance WS Error: %v", err)
 	}
 
-	doneC, _, err := binance.WsMarketStatServe("BTCUSDT", wsHandler, errHandler)
-	if err != nil {
-		log.Fatal(err)
-	}
+	doneC, stopC, err := binance.WsMarketStatServe("BTCUSDT", wsHandler, errHandler)
+if err != nil {
+    log.Fatal(err)
+}
 
 	fmt.Println("📡 Ingestor is LIVE. Streaming data to Kafka & Redis...")
 
@@ -55,6 +59,7 @@ func main() {
 	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
 
 	<-stopChan
-	doneC <- struct{}{}
+	stopC <- struct{}{}
+	<-doneC
 	fmt.Println("\nShutting down gracefully...")
 }
