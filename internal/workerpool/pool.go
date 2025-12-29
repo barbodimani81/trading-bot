@@ -7,7 +7,30 @@ import (
 	"sync"
 
 	"github.com/barbodimani81/trading-bot.git/internal/platform/redis"
+	"github.com/prometheus/client_golang/prometheus"
 )
+
+var (
+	// Histogram: Measures how long (in seconds) the strategy logic takes
+	ProcessingDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "worker_processing_duration_seconds",
+		Help:    "Time taken to process a single trade strategy",
+		Buckets: prometheus.DefBuckets, // e.g. 0.005s, 0.01s, 0.025s...
+	})
+
+	// Counter: Counts how many times we decided to "BUY"
+	BuySignals = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "strategy_buy_signals_total",
+		Help: "Total number of buy signals generated",
+	})
+)
+
+func init() {
+    prometheus.MustRegister(ProcessingDuration)
+    prometheus.MustRegister(BuySignals)
+
+    ProcessingDuration.Observe(0) 
+}
 
 type Job struct {
 	Symbol string
@@ -54,6 +77,8 @@ func (wp *Workerpool) worker(ctx context.Context, id int) {
 }
 
 func (wp *Workerpool) processTrade(workerID int, job Job, rdb *redis.RedisClient) {
+	timer := prometheus.NewTimer(ProcessingDuration)
+	defer timer.ObserveDuration()
 	ctx := context.Background()
 	key := fmt.Sprintf("history:%s", job.Symbol)
 
@@ -87,6 +112,8 @@ func (wp *Workerpool) processTrade(workerID int, job Job, rdb *redis.RedisClient
 	} else {
 		fmt.Printf("stable [Worker %d]: %s at %f (Avg: %f)\n", workerID, job.Symbol, current, avg)
 	}
+
+	BuySignals.Inc()
 }
 
 func (wp *Workerpool) Wait() {

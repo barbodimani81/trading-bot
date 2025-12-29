@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,11 +12,27 @@ import (
 	"github.com/barbodimani81/trading-bot.git/internal/platform/kafka"
 	"github.com/barbodimani81/trading-bot.git/internal/platform/redis"
 	"github.com/barbodimani81/trading-bot.git/internal/workerpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/adshao/go-binance/v2"
 )
 
+var (
+    messagesProcessed = prometheus.NewCounter(prometheus.CounterOpts{
+        Name: "ingestor_messages_total",
+        Help: "Total number of price updates received from Binance",
+    })
+)
+
 func main() {
+	prometheus.MustRegister(messagesProcessed)
+
+	go func() {
+        http.Handle("/metrics", promhttp.Handler())
+        http.ListenAndServe(":2112", nil)
+    }()
+	
 	rdb, err := redis.NewRedisClient("localhost:6379")
 	if err != nil {
 		log.Fatalf("Redis Init Failed: %v", err)
@@ -33,6 +50,9 @@ func main() {
 	wsHandler := func(event *binance.WsMarketStatEvent) {
 		price := event.LastPrice
 		symbol := event.Symbol
+
+		messagesProcessed.Inc()
+
 		err := kafka.PushMessage(producer, "market_data", symbol, price)
 		if err != nil {
 			log.Printf("Kafka Push Error: %v", err)
@@ -53,7 +73,7 @@ if err != nil {
     log.Fatal(err)
 }
 
-	fmt.Println("📡 Ingestor is LIVE. Streaming data to Kafka & Redis...")
+	fmt.Println("Ingestor is LIVE. Streaming data to Kafka & Redis...")
 
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)

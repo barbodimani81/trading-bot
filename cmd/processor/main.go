@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,9 +11,18 @@ import (
 	"github.com/IBM/sarama"
 	"github.com/barbodimani81/trading-bot.git/internal/platform/redis"
 	"github.com/barbodimani81/trading-bot.git/internal/workerpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
+	go func() {
+        http.Handle("/metrics", promhttp.Handler())
+        log.Println("📊 Processor Metrics running on :2113")
+        if err := http.ListenAndServe(":2113", nil); err != nil {
+             log.Fatal("Metrics server failed:", err)
+        }
+    }()
+	
 	rdb, err := redis.NewRedisClient("localhost:6379")
     if err != nil {
         log.Fatalf("Processor Redis Init Failed: %v", err)
